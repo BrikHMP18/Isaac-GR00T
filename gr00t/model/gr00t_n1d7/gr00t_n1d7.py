@@ -568,16 +568,19 @@ class Gr00tN1d7(PreTrainedModel):
 
         return backbone_inputs, action_inputs
 
-    def forward(self, inputs: dict) -> BatchFeature:
+    def forward(self, inputs: dict, return_loss: bool = True) -> dict[str, Any]:  # noqa: ARG002
         """
         Forward pass through the complete model.
 
         Args:
             inputs: Dictionary containing:
                 - Action inputs (state, action, embodiment_id, etc.)
+            return_loss: Must default to ``True`` so HuggingFace ``Trainer.can_return_loss`` is ``True``;
+                the Trainer then runs the same ``compute_loss`` path in validation and logs ``eval_loss``.
+                Unused on this code path (the action head always computes loss).
 
         Returns:
-            BatchFeature containing loss and other outputs
+            Dict containing ``loss`` and other action-head outputs.
         """
         # Prepare inputs for backbone and action head
         backbone_inputs, action_inputs = self.prepare_input(inputs)

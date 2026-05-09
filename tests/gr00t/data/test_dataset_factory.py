@@ -26,13 +26,13 @@ real LeRobot datasets. We test the parts that can be isolated:
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 
 def _make_mock_config():
     """Create a minimal mock training Config."""
     config = MagicMock()
     config.training.eval_strategy = "no"
+    config.training.eval_set_split_ratio = 0.4
     config.data.mode = "single_turn"
     config.data.video_backend = "torchcodec"
     config.data.shard_size = 128
@@ -118,11 +118,65 @@ class TestDatasetFactory:
         assert train_ds is not None
         assert eval_ds is None
 
-    def test_build_rejects_eval_strategy(self):
+    def test_build_creates_eval_dataset_when_eval_enabled(self):
         from gr00t.data.dataset.factory import DatasetFactory
 
         config = _make_mock_config()
         config.training.eval_strategy = "steps"
         factory = DatasetFactory(config)
-        with pytest.raises(AssertionError, match="does not support evaluation"):
-            factory.build(MagicMock())
+        mock_processor = MagicMock()
+
+        mock_dataset = MagicMock()
+        mock_dataset.__len__ = MagicMock(return_value=10)
+        mock_dataset.shard_lengths = np.full(10, 100)
+        mock_dataset.get_shard_length = MagicMock(return_value=100)
+        mock_dataset.embodiment_tag = type("ET", (), {"value": "new_embodiment"})()
+        mock_dataset.get_dataset_statistics.return_value = {
+            "state": {
+                "x": {
+                    "min": [0.0],
+                    "max": [1.0],
+                    "mean": [0.5],
+                    "std": [0.2],
+                    "q01": [0.05],
+                    "q99": [0.95],
+                }
+            },
+            "action": {
+                "x": {
+                    "min": [-1.0],
+                    "max": [1.0],
+                    "mean": [0.0],
+                    "std": [0.3],
+                    "q01": [-0.9],
+                    "q99": [0.9],
+                }
+            },
+        }
+
+        mock_episode_loader = MagicMock()
+        mock_episode_loader.__len__ = MagicMock(return_value=5)
+
+        with (
+            patch("gr00t.data.dataset.factory.generate_stats"),
+            patch("gr00t.data.dataset.factory.generate_rel_stats"),
+            patch("gr00t.data.dataset.factory.barrier"),
+            patch("gr00t.data.dataset.factory.LeRobotEpisodeLoader", return_value=mock_episode_loader),
+            patch("gr00t.data.dataset.factory.ShardedSingleStepDataset", return_value=mock_dataset) as dataset_cls,
+            patch("torch.distributed.is_initialized", return_value=False),
+        ):
+            train_ds, eval_ds = factory.build(mock_processor)
+
+        assert train_ds is not None
+        assert eval_ds is not None
+        assert train_ds.training is True
+        assert eval_ds.training is False
+        assert eval_ds.set_processor_statistics is False
+
+        assert dataset_cls.call_count == 2
+        train_indices = dataset_cls.call_args_list[0].kwargs["episode_indices"]
+        eval_indices = dataset_cls.call_args_list[1].kwargs["episode_indices"]
+        assert train_indices
+        assert eval_indices
+        assert set(train_indices).isdisjoint(eval_indices)
+        assert sorted(train_indices + eval_indices) == list(range(len(mock_episode_loader)))

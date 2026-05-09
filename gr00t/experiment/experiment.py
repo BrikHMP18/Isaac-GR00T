@@ -31,7 +31,11 @@ from gr00t.configs.base_config import Config
 
 # Use custom trainer that profiles data loading & forward times
 from gr00t.experiment.trainer import Gr00tTrainer, ProfCallback
-from gr00t.experiment.utils import BestMetricCheckpointCallback, CheckpointFormatCallback
+from gr00t.experiment.utils import (
+    BestMetricCheckpointCallback,
+    CheckpointFormatCallback,
+    EvalRunningBestWandbCallback,
+)
 from gr00t.model import MODEL_REGISTRY
 from gr00t.utils.initial_actions import INITIAL_ACTIONS_FILENAME, save_initial_actions
 
@@ -263,8 +267,11 @@ def run(config: Config):
                 metric_name=config.training.save_best_eval_metric_name,
                 greater_is_better=config.training.save_best_eval_metric_greater_is_better,
                 exp_cfg_dir=save_cfg_dir,
+                log_running_best_to_wandb=config.training.use_wandb,
             )
         )
+    elif config.training.use_wandb and config.training.eval_strategy != "no":
+        trainer.add_callback(EvalRunningBestWandbCallback())
 
     if hasattr(train_dataset, "get_initial_actions"):
         initial_actions = train_dataset.get_initial_actions()
