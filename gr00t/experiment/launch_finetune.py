@@ -107,6 +107,14 @@ if __name__ == "__main__":
     config.training.weight_decay = ft_config.weight_decay
     config.training.warmup_ratio = ft_config.warmup_ratio
     config.training.wandb_project = ft_config.wandb_project
+    config.training.eval_strategy = ft_config.eval_strategy
+    config.training.eval_steps = ft_config.eval_steps
+    config.training.eval_set_split_ratio = ft_config.eval_set_split_ratio
+    config.training.eval_batch_size = ft_config.eval_batch_size
+    config.training.save_best_eval_metric_name = ft_config.save_best_eval_metric_name
+    config.training.save_best_eval_metric_greater_is_better = (
+        ft_config.save_best_eval_metric_greater_is_better
+    )
 
     config.data.shard_size = ft_config.shard_size
     config.data.episode_sampling_rate = ft_config.episode_sampling_rate

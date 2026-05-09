@@ -211,6 +211,24 @@ class Gr00tTrainer(Trainer):
             # compute_metrics=partial(compute_eval_accuracy, action_offset=self.action_offset),
         )
 
+    @staticmethod
+    def _set_dataset_processor_mode(dataset: Any, training: bool) -> None:
+        if dataset is None:
+            return
+        processor = getattr(dataset, "processor", None)
+        if processor is not None:
+            if training:
+                processor.train()
+            else:
+                processor.eval()
+        for child_dataset in getattr(dataset, "datasets", []):
+            child_processor = getattr(child_dataset, "processor", None)
+            if child_processor is not None:
+                if training:
+                    child_processor.train()
+                else:
+                    child_processor.eval()
+
     def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
         # Hide epoch from logged metrics as it's misleading for Iterable datasets.
         epoch = self.state.epoch
@@ -220,6 +238,8 @@ class Gr00tTrainer(Trainer):
 
     def get_train_dataloader(self):  # noqa: D401
         """Return a iterable dataloader without skipping the data during resume, but reseed the dataset instead."""
+
+        self._set_dataset_processor_mode(self.train_dataset, training=True)
 
         # Fall back to default behaviour if not using the custom buffer.
         # During resume, don't skip the data
@@ -255,6 +275,23 @@ class Gr00tTrainer(Trainer):
             dataloader_params["multiprocessing_context"] = self.multiprocessing_context
 
         return torch.utils.data.DataLoader(self.train_dataset, **dataloader_params)
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        target_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        self._set_dataset_processor_mode(target_dataset, training=False)
+        return super().get_eval_dataloader(eval_dataset)
+
+    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix: str = "eval"):
+        target_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        self._set_dataset_processor_mode(target_dataset, training=False)
+        try:
+            return super().evaluate(
+                eval_dataset=eval_dataset,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+            )
+        finally:
+            self._set_dataset_processor_mode(self.train_dataset, training=True)
 
     def train(
         self,

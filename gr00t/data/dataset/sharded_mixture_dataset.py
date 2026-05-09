@@ -178,6 +178,7 @@ class ShardedMixtureDataset(IterableDataset):
         training: bool = True,
         num_shards_per_epoch: int = int(1e5),
         override_pretraining_statistics: bool = False,
+        set_processor_statistics: bool = True,
     ):
         """Initialize mixture dataset with datasets, weights, and configuration."""
         self.datasets = datasets
@@ -188,6 +189,7 @@ class ShardedMixtureDataset(IterableDataset):
         self.epoch = 0
         self.processor = processor
         self.override_pretraining_statistics = override_pretraining_statistics
+        self.set_processor_statistics = set_processor_statistics
 
         # Generate initial shard sampling schedule
         self.shard_sampling_schedule = self.generate_shard_sampling_schedule()
@@ -246,11 +248,17 @@ class ShardedMixtureDataset(IterableDataset):
                         is_relative_stats=(modality == "relative_action"),
                     )
 
-        # Configure processor and datasets with merged statistics
+        # Configure processor and datasets with merged statistics. Evaluation datasets can share the
+        # processor statistics already established by the training dataset to avoid validation leakage.
         self.global_stats = stats_by_emb
-        self.processor.set_statistics(
-            self.global_stats, override=self.override_pretraining_statistics
-        )
+        if self.set_processor_statistics:
+            self.processor.set_statistics(
+                self.global_stats, override=self.override_pretraining_statistics
+            )
+        if self.training:
+            self.processor.train()
+        else:
+            self.processor.eval()
         for ds in self.datasets:
             ds.set_processor(self.processor)
 
@@ -371,6 +379,9 @@ class ShardedMixtureDataset(IterableDataset):
 
         # Initialize worker-specific shard schedule
         self.worker_shard_sampling_schedule = self.filter_shard_sample_schedule()
+        if len(self.worker_shard_sampling_schedule) == 0:
+            self._executor.shutdown(wait=True)
+            return
         self.curr_shard_index = -1
         self.cache_next_shard()
         rng = np.random.default_rng(self.seed + self.epoch)
@@ -389,8 +400,10 @@ class ShardedMixtureDataset(IterableDataset):
                 f"Rank {self.rank}, Worker {self.worker_id}: Wait for shard {shard_index} in dataset {dataset_index} in {wait_end - wait_start:.2f} seconds"
             )
 
-            # Start caching next shard immediately
-            self.cache_next_shard()
+            # Start caching next shard immediately when another shard is available.
+            has_next_shard = self.curr_shard_index + 1 < len(self.worker_shard_sampling_schedule)
+            if self.training or has_next_shard:
+                self.cache_next_shard()
 
             # Yield shuffled timesteps from current shard
             assert self.curr_shard is not None
@@ -401,6 +414,9 @@ class ShardedMixtureDataset(IterableDataset):
 
             # Clean up cached shard to free memory
             self.delete_cached_shard()
+            if not self.training and not has_next_shard:
+                self._executor.shutdown(wait=True)
+                return
 
     def cache_next_shard(self):
         """
@@ -412,6 +428,8 @@ class ShardedMixtureDataset(IterableDataset):
         assert self._executor is not None
         # Check if epoch is complete and regenerate schedule if needed
         if self.curr_shard_index + 1 >= len(self.worker_shard_sampling_schedule):
+            if not self.training:
+                return
             self.epoch += 1
             self.shard_sampling_schedule = self.generate_shard_sampling_schedule()
             self.worker_shard_sampling_schedule = self.filter_shard_sample_schedule()

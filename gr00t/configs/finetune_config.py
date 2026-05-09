@@ -145,6 +145,24 @@ class FinetuneConfig:
     warmup_ratio: float = 0.05
     """Proportion of total training steps used for learning rate warm-up."""
 
+    eval_strategy: str = "no"
+    """Evaluation strategy for validation. Options are: "no", "steps", or "epoch"."""
+
+    eval_steps: int = 500
+    """Frequency in training steps at which to run validation when eval_strategy is "steps"."""
+
+    eval_set_split_ratio: float = 0.1
+    """Fraction of episodes to reserve for validation when evaluation is enabled."""
+
+    eval_batch_size: int = 2
+    """Per-device batch size used during validation."""
+
+    save_best_eval_metric_name: str = ""
+    """Optional validation metric name used to keep the best checkpoint."""
+
+    save_best_eval_metric_greater_is_better: bool = True
+    """Whether a larger best-checkpoint metric value is better."""
+
     shard_size: int = 2**10
     """Size of the shard to use for the dataset during preloading."""
 
