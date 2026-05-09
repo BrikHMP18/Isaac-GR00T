@@ -38,7 +38,7 @@ uv run huggingface-cli download NONHUMAN-RESEARCH/push_peluche_processed_and_cle
     --local-dir /workspace/datasets/push_peluche
 ```
 
-## Vast.ai 2-GPU Launch
+## Vast.ai Conservative 1-GPU Launch
 
 If you need to clear an old crashed run, stop previous Python training processes first. This
 kills every Python process in the container, including notebooks or shells using Python:
@@ -50,29 +50,28 @@ pkill -9 python || true
 Set the GPU and NCCL environment variables:
 
 ```bash
-export NUM_GPUS=2
-export CUDA_VISIBLE_DEVICES=0,1
+export NUM_GPUS=1
+export CUDA_VISIBLE_DEVICES=0
 export NCCL_P2P_DISABLE=1
 export NCCL_IB_DISABLE=1
 ```
 
-Launch with `torchrun` so both GPUs get a distributed worker. BF16 is enabled by default in
-the training config, so no extra `--bf16` flag is needed.
+Launch with regular Python for the single visible GPU. BF16 is enabled by default in the
+training config, so no extra `--bf16` flag is needed.
 
 ```bash
-uv run torchrun --nproc_per_node=$NUM_GPUS --master_port=29500 \
-    gr00t/experiment/launch_finetune.py \
+uv run python gr00t/experiment/launch_finetune.py \
     --base-model-path nvidia/GR00T-N1.7-3B \
     --dataset-path /workspace/datasets/push_peluche \
     --embodiment-tag UNITREE_G1_SONIC \
     --modality-config-path gr00t/configs/data/embodiment_configs.py \
     --num-gpus $NUM_GPUS \
-    --output-dir /workspace/output_push_peluche_v6_max \
+    --output-dir /workspace/output_push_peluche_v5_conservative \
     --save-total-limit 5 \
     --save-steps 1000 \
     --max-steps 10000 \
     --use-wandb \
-    --global-batch-size 32 \
+    --global-batch-size 16 \
     --eval-strategy steps \
     --eval-steps 1000 \
     --eval-set-split-ratio 0.2 \
@@ -80,7 +79,7 @@ uv run torchrun --nproc_per_node=$NUM_GPUS --master_port=29500 \
     --save-best-eval-metric-name eval_loss \
     --no-save-best-eval-metric-greater-is-better \
     --color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
-    --dataloader-num-workers 16
+    --dataloader-num-workers 4
 ```
 
 ## What This Does
